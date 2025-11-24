@@ -7,17 +7,16 @@ using Random
 using StaticArrays
 using Statistics
 using PythonCall
-using Revise
 
 # Import local modules with Revise for automatic reloading
-includet("src/fov.jl")
-includet("src/rrt_star.jl")
-includet("src/world.jl")
-includet("src/visual_odometry.jl")
-includet("src/nominal_planner.jl")
-includet("src/backup_planner.jl")
-includet("src/utils.jl")
-includet("src/gatekeeper.jl")
+include("src/utils.jl")
+include("src/fov.jl")
+include("src/rrt_star.jl")
+include("src/world.jl")
+include("src/visual_odometry.jl")
+include("src/nominal_planner.jl")
+include("src/backup_planner.jl")
+include("src/gatekeeper.jl")
 
 using .World
 using .VO
@@ -166,15 +165,17 @@ end
 
 Run the main simulation loop using the provided setup.
 
-If use_controller=true, uses a tracking controller with Dubins dynamics.
+If use_controller=true, uses a tracking controller with Dubins dynamics and state estimation.
 Otherwise, samples trajectory directly (old behavior).
 
 Returns a named tuple with complete simulation history:
-- x_hist: state history
+- x_hist: true state history
+- x_est_hist: estimated state history (if use_controller=true)
 - gk_hist: gatekeeper/committed trajectory history
 - features_hist: observed features history
 - backup_hist: backup planner tree history
 - cost_hist: cumulative cost history
+- estimation_error_hist: position estimation error history
 - num_feats_hist: number of features seen history
 - new_committed_hist: history of gatekeeper success
 - gk_times: gatekeeper computation times
@@ -205,16 +206,23 @@ function run_simulation(setup;
     current_cost = 0.0
     
     # Initialize history
-    x_hist = [x0]
+    x_hist = [x0]  # True state
+    x_est_hist = [x0]  # Estimated state
     gk_hist = [committed_traj]
     features_hist = [backup_planner.prob.mapped_features[1]]
     backup_hist = [copy(backup_planner.nodes)]
     cost_hist = [current_cost]
+    estimation_error_hist = [0.0]
     num_feats_hist = [NaN]
     new_committed_hist = [1.0]
     control_hist = SVector{2,Float64}[]
     
-    x = x0
+    # Track which landmarks have been discovered (all start as false except first)
+    landmarks_discovered = [true, [false for _ in 2:length(backup_planner.prob.landmarks)]...]
+    landmarks_discovered_hist = [copy(landmarks_discovered)]
+    
+    x = x0  # True state
+    x_est = x0  # Estimated state
     t = t_commit = 0.0
     
     gk_times = Float64[]
@@ -227,38 +235,50 @@ function run_simulation(setup;
         
         # Compute state update
         if use_controller
-            # Get target waypoint from trajectory
+            # Get target waypoint from trajectory using ESTIMATED state
             target = get_trajectory_target(committed_traj, t - t_commit, 
                                           nominal_planner.prob.max_velocity, lookahead_dist)
             
-            # Compute control input
-            u = waypoint_controller(x, target, nominal_planner.prob.max_velocity, 
+            # Compute control input using ESTIMATED state
+            u = waypoint_controller(x_est, target, nominal_planner.prob.max_velocity, 
                                    backup_planner.prob.turning_radius, lookahead_dist)
             push!(control_hist, u)
             
-            # Propagate dynamics
+            # Propagate TRUE dynamics
             x = dubins_dynamics(x, u, ΔT, backup_planner.prob.turning_radius)
+            
+            # Update state estimate with odometry error
+            x_est = update_state_estimate(x_est, x, u, ΔT, vo_params.errorRate)
         else
             # Old behavior: sample trajectory directly
             x = sample_committed_trajectory(committed_traj, t - t_commit, nominal_planner.prob.max_velocity)
+            x_est = x  # No estimation error in direct sampling mode
         end
         
         push!(x_hist, x)
+        push!(x_est_hist, x_est)
         
-        # Check if landmark is visible (reset cost if so)
+        # Compute estimation error (position only, since yaw is always known)
+        est_error = norm(x_est[SOneTo(2)] - x[SOneTo(2)])
+        push!(estimation_error_hist, est_error)
+        
+        # Check if landmark is visible (reset cost and estimate if so)
         landmark_seen = false
-        for l in backup_planner.prob.landmarks
+        for (idx, l) in enumerate(backup_planner.prob.landmarks)
             if t >= t_backup_reached || is_in_fov(x, l, backup_planner.prob.turning_radius*1.1, 2π) || is_in_fov(x, l, vo_params.fovRadius, vo_params.fovAngle)
                 if verbose && i % 10 == 0
-                    println("Iter $i: landmark seen")
+                    println("Iter $i: landmark $idx seen - resetting estimate")
                 end
                 current_cost = 0.0
                 landmark_seen = true
+                landmarks_discovered[idx] = true
+                # Reset state estimate to truth when landmark is observed
+                x_est = reset_state_estimate(x)
                 break
             end
         end
         
-        # Update odometry error
+        # Update odometry error (this represents the "true" accumulated error)
         if !landmark_seen
             cost, num_feats = VO.odometry_error(x_hist[end-1], x, features, vo_params)
             current_cost += cost
@@ -269,7 +289,7 @@ function run_simulation(setup;
         push!(cost_hist, current_cost)
         
         if verbose && i % 10 == 0
-            println("Iter $i: x: $x, cost: $current_cost")
+            println("Iter $i: x_true: $x, x_est: $x_est, est_error: $(est_error), cost: $current_cost")
         end
         
         # Check if goal reached
@@ -296,11 +316,12 @@ function run_simulation(setup;
         push!(reroot_times, reroot_time)
         push!(features_hist, backup_planner.prob.mapped_features[1])
         push!(backup_hist, copy(backup_planner.nodes))
+        push!(landmarks_discovered_hist, copy(landmarks_discovered))
         
-        # Run gatekeeper
+        # Run gatekeeper using ESTIMATED state (controller uses estimate, so planning should too)
         gk_time = @elapsed begin
             new_committed, committed_traj = gatekeeper(
-                x, committed_traj, nominal_planner, backup_planner, max_cost - current_cost
+                x_est, committed_traj, nominal_planner, backup_planner, max_cost - current_cost
             )
         end
         push!(gk_times, gk_time)
@@ -335,17 +356,20 @@ function run_simulation(setup;
     
     return (
         x_hist=x_hist,
+        x_est_hist=x_est_hist,
         gk_hist=gk_hist,
         features_hist=features_hist,
         backup_hist=backup_hist,
         cost_hist=cost_hist,
+        estimation_error_hist=estimation_error_hist,
         num_feats_hist=num_feats_hist,
         new_committed_hist=new_committed_hist,
         gk_times=gk_times,
         reroot_times=reroot_times,
         t_f=t_f,
         ΔT=ΔT,
-        control_hist=control_hist
+        control_hist=control_hist,
+        landmarks_discovered_hist=landmarks_discovered_hist
     )
 end
 
@@ -363,6 +387,32 @@ function compute_timing_stats(sim_results)
     
     return (mean_reroot=mean_reroot, std_reroot=std_reroot, 
             mean_gk=mean_gk, std_gk=std_gk)
+end
+
+"""
+    plot_timing_histograms(sim_results; bins=50)
+
+Plot histograms of reroot and gatekeeper computation times.
+"""
+function plot_timing_histograms(sim_results; bins=50)
+    reroot_ms = sim_results.reroot_times .* 1000
+    gk_ms = sim_results.gk_times .* 1000
+    
+    p1 = histogram(reroot_ms, bins=bins, 
+                   xlabel="Time (ms)", ylabel="Count", 
+                   title="Backup Planner Update Times",
+                   label="", color=:blue, alpha=0.7)
+    vline!([mean(reroot_ms)], linewidth=2, color=:red, 
+           label="Mean: $(round(mean(reroot_ms), digits=2)) ms")
+    
+    p2 = histogram(gk_ms, bins=bins,
+                   xlabel="Time (ms)", ylabel="Count",
+                   title="Gatekeeper Computation Times", 
+                   label="", color=:green, alpha=0.7)
+    vline!([mean(gk_ms)], linewidth=2, color=:red,
+           label="Mean: $(round(mean(gk_ms), digits=2)) ms")
+    
+    plot(p1, p2, layout=(2,1), size=(800, 600))
 end
 
 """
@@ -404,8 +454,8 @@ end
 Compute where the nominal trajectory would fail and its total cost.
 Returns (nominal_cost, failure_state, failure_index).
 """
-function compute_nominal_failure(nominal_planner, initial_nom_path, vo_params)
-    nom_cost = compute_nominal_trajectory_cost(nominal_planner.prob, initial_nom_path, Inf)
+function compute_nominal_failure(nominal_planner, backup_prob, initial_nom_path, vo_params)
+    nom_cost = compute_nominal_trajectory_cost(backup_prob, initial_nom_path, Inf)
     nom_fail_idx = length(nom_cost)
     x_nom_fail = sample_combined_dubins_path(
         initial_nom_path, 

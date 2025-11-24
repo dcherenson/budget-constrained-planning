@@ -37,6 +37,41 @@ function dubins_dynamics(x::SVector{3,F}, u::SVector{2,F}, dt::F, turning_radius
 end
 
 """
+    update_state_estimate(x_est::SVector{3,F}, x_true::SVector{3,F}, u::SVector{2,F}, 
+                         dt::F, error_rate::F) where F
+
+Update state estimate using odometry with error accumulation.
+Position drifts based on error_rate, yaw is always known from true state.
+Returns new estimate [x_est, y_est, θ_true].
+"""
+function update_state_estimate(x_est::SVector{3,F}, x_true::SVector{3,F}, u::SVector{2,F}, 
+                               dt::F, error_rate::F) where F
+    v, ω = u
+    θ = x_true[3]  # Yaw is always known
+    
+    # Integrate position using estimated state heading
+    # Add error proportional to distance traveled
+    distance_traveled = v * dt
+    error_magnitude = error_rate * distance_traveled
+    
+    # Random error direction (in practice this would be more sophisticated)
+    # For simulation, we'll use a simple drift model
+    x_new = x_est[1] + v * cos(θ) * dt + error_magnitude * cos(θ + π/4)
+    y_new = x_est[2] + v * sin(θ) * dt + error_magnitude * sin(θ + π/4)
+    
+    return SVector(x_new, y_new, θ)
+end
+
+"""
+    reset_state_estimate(x_true::SVector{3,F}) where F
+
+Reset state estimate to true state (e.g., when landmark is observed).
+"""
+function reset_state_estimate(x_true::SVector{3,F}) where F
+    return x_true
+end
+
+"""
     waypoint_controller(x::SVector{3,F}, target::SVector{3,F}, max_velocity::F, 
                        turning_radius::F, lookahead_dist::F=5.0) where F
 
@@ -82,7 +117,7 @@ end
 
 Get target waypoint from trajectory at current time + lookahead distance.
 """
-function get_trajectory_target(traj::CompositeTrajectory, t_rel::F, vel::F, lookahead::F) where F
+function get_trajectory_target(traj, t_rel::F, vel::F, lookahead::F) where F
     # Sample trajectory at lookahead distance
     s_current = t_rel * vel
     s_target = s_current + lookahead

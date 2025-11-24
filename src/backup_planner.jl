@@ -206,12 +206,12 @@ function RRTStar.path_cost(problem::BackupPlannerProblem, x_near, x_new)
             s = L
         end
         landmark_in_fov = false
-        # for l in problem.landmarks
-        #     if is_in_fov(start_step, l, problem.vo_params.fovRadius, problem.vo_params.fovAngle)
-        #         landmark_in_fov = true
-        #         break
-        #     end
-        # end
+        for l in problem.landmarks
+            if is_in_fov(start_step, l, problem.vo_params.fovRadius, problem.vo_params.fovAngle)
+                landmark_in_fov = true
+                break
+            end
+        end
          
         errcode, end_step = Dubins.dubins_path_sample(path, s)
         @assert errcode == Dubins.EDUBOK errcode
