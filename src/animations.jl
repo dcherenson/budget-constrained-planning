@@ -23,7 +23,7 @@ end
     animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_hist,
                        nominal_planner, backup_planner, vo_params, domain_size, AR;
                        cost_hist=nothing, num_feats_hist=nothing, landmarks_discovered_hist=nothing,
-                       image_path="images/field.png", airplane_path="images/airplane.png",
+                       image_path="images/field.png", airplane_path="images/blue_airplane.png",
                        airplane_size=15.0, frame_skip=1, show_estimate=true)
 
 Create animation of the full simulation showing:
@@ -51,7 +51,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
                             num_feats_hist=nothing,
                             landmarks_discovered_hist=nothing,
                             image_path="images/field.png", 
-                            airplane_path="images/airplane.png",
+                            airplane_path="images/blue_airplane.png",
                             airplane_size=15.0, 
                             frame_skip=1,
                             show_estimate=true)
@@ -121,14 +121,12 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
             discovered = [true for _ in 1:length(backup_planner.prob.landmarks)]
         end
         
-        # Goal landmark (only if discovered)
-        if discovered[end]
-            plot!(Shape(backup_planner.prob.landmarks[end][1] .+ backup_planner.prob.turning_radius*cos.(0:0.01:2pi),
-                        backup_planner.prob.landmarks[end][2] .+ backup_planner.prob.turning_radius*sin.(0:0.01:2pi)), 
-                  color=:cyan, alpha=0.2)
-            plot!([backup_planner.prob.landmarks[end][1]], [backup_planner.prob.landmarks[end][2]], 
-                  color=:yellow, marker=:circle, markersize=10)
-        end
+        # Goal landmark (always show)
+        plot!(Shape(backup_planner.prob.landmarks[end][1] .+ backup_planner.prob.turning_radius*cos.(0:0.01:2pi),
+                    backup_planner.prob.landmarks[end][2] .+ backup_planner.prob.turning_radius*sin.(0:0.01:2pi)), 
+              color=:cyan, alpha=0.2)
+        plot!([backup_planner.prob.landmarks[end][1]], [backup_planner.prob.landmarks[end][2]], 
+              color=:yellow, marker=:circle, markersize=10)
         
         # Start landmark (only if discovered)
         if discovered[1]
@@ -154,7 +152,18 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
         plot_domain(nominal_planner.prob.domain)
         plot!(nominal_planner.prob.unsafe_zones; color=:red, width=2)
         
-        # Airplane at current position
+        # Estimated airplane position (transparent red) - plot first so true position is on top
+        if show_estimate && !isempty(x_est_hist) && i <= length(x_est_hist)
+            rotated_airplane_est = imrotate(airplane_img, -x_est_hist[i][3], axes(airplane_img))
+            h_plane_est, w_plane_est = size(rotated_airplane_est)
+            aspect_est = w_plane_est / h_plane_est
+            half_size_est = airplane_size / 2
+            plot!([x_est_hist[i][1] - half_size_est*aspect_est, x_est_hist[i][1] + half_size_est*aspect_est],
+                  [x_est_hist[i][2] - half_size_est, x_est_hist[i][2] + half_size_est],
+                  reverse(rotated_airplane_est, dims=1), yflip=false, alpha=0.3)
+        end
+        
+        # True airplane position
         rotated_airplane = imrotate(airplane_img, -x_hist[i][3], axes(airplane_img))
         h_plane, w_plane = size(rotated_airplane)
         aspect = w_plane / h_plane
@@ -202,14 +211,14 @@ end
 
 """
     animate_orbit(x0, nominal_planner, backup_planner, domain_size, AR;
-                  image_path="images/field.png", airplane_path="images/airplane.png",
+                  image_path="images/field.png", airplane_path="images/blue_airplane.png",
                   airplane_size=15.0, dt=0.1)
 
 Create animation of vehicle orbiting around start landmark.
 """
 function animate_orbit(x0, nominal_planner, backup_planner, domain_size, AR;
                       image_path="images/field.png",
-                      airplane_path="images/airplane.png",
+                      airplane_path="images/blue_airplane.png",
                       airplane_size=15.0,
                       dt=0.1)
     

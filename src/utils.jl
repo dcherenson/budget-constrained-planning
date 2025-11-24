@@ -37,38 +37,58 @@ function dubins_dynamics(x::SVector{3,F}, u::SVector{2,F}, dt::F, turning_radius
 end
 
 """
-    update_state_estimate(x_est::SVector{3,F}, x_true::SVector{3,F}, u::SVector{2,F}, 
-                         dt::F, error_rate::F) where F
+    update_estimation_error(error::SVector{2,F}, u::SVector{2,F}, dt::F, error_rate::F, 
+                           error_direction::F) where F
 
-Update state estimate using odometry with error accumulation.
-Position drifts based on error_rate, yaw is always known from true state.
-Returns new estimate [x_est, y_est, θ_true].
+Update estimation error in a fixed direction.
+Error grows in the specified direction proportional to distance traveled.
+Returns new error vector [error_x, error_y].
 """
-function update_state_estimate(x_est::SVector{3,F}, x_true::SVector{3,F}, u::SVector{2,F}, 
-                               dt::F, error_rate::F) where F
+function update_estimation_error(error::SVector{2,F}, u::SVector{2,F}, dt::F, error_rate::F,
+                                error_direction::F) where F
     v, ω = u
-    θ = x_true[3]  # Yaw is always known
     
-    # Integrate position using estimated state heading
-    # Add error proportional to distance traveled
+    # Error grows proportional to distance traveled in the fixed direction
     distance_traveled = v * dt
     error_magnitude = error_rate * distance_traveled
+
+    error_direction += rand() * 0.01  # small random walk in error direction
     
-    # Random error direction (in practice this would be more sophisticated)
-    # For simulation, we'll use a simple drift model
-    x_new = x_est[1] + v * cos(θ) * dt + error_magnitude * cos(θ + π/4)
-    y_new = x_est[2] + v * sin(θ) * dt + error_magnitude * sin(θ + π/4)
+    error_x_new = error[1] + error_magnitude * cos(error_direction)
+    error_y_new = error[2] + error_magnitude * sin(error_direction)
     
-    return SVector(x_new, y_new, θ)
+    return SVector(error_x_new, error_y_new)
 end
 
 """
-    reset_state_estimate(x_true::SVector{3,F}) where F
+    reset_estimation_error() where F
 
-Reset state estimate to true state (e.g., when landmark is observed).
+Reset estimation error to zero (e.g., when landmark is observed).
+Returns zero error vector.
 """
-function reset_state_estimate(x_true::SVector{3,F}) where F
-    return x_true
+function reset_estimation_error(::Type{F}=Float64) where F
+    return SVector{2,F}(0.0, 0.0)
+end
+
+"""
+    sample_error_direction(::Type{F}=Float64) where F
+
+Sample a new random error direction (used after landmark reset).
+Returns angle in [0, 2π).
+"""
+function sample_error_direction(::Type{F}=Float64) where F
+    return rand(F) * 2π
+end
+
+"""
+    compute_estimated_state(x_true::SVector{3,F}, error::SVector{2,F}) where F
+
+Compute estimated state from true state and error.
+x_est = x_true + error (position only, yaw is always known).
+Returns [x_est, y_est, θ_true].
+"""
+function compute_estimated_state(x_true::SVector{3,F}, error::SVector{2,F}) where F
+    return SVector(x_true[1] + error[1], x_true[2] + error[2], x_true[3])
 end
 
 """
