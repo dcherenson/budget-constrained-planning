@@ -91,6 +91,7 @@ function compute_estimated_state(x_true::SVector{3,F}, error::SVector{2,F}) wher
     return SVector(x_true[1] + error[1], x_true[2] + error[2], x_true[3])
 end
 
+
 """
     waypoint_controller(x::SVector{3,F}, target::SVector{3,F}, max_velocity::F, 
                        turning_radius::F, lookahead_dist::F=5.0) where F

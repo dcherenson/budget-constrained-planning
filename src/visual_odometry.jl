@@ -11,6 +11,7 @@ include("fov.jl")
     errorRate::F
     updateRate::F
     minFeatures::Int
+    featureBuffer::Int
 end
 
 function intersect_fast(a::Vector{I},b::Vector{I}) where {I <: Integer}

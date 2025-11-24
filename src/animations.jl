@@ -86,7 +86,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
               colors=[:orange, [:white for k=1:length(backup_planner.prob.landmarks)-2]..., :yellow])
         
         # Nominal path from current position
-        success, best_path = query_nominal_planner(nominal_planner, x_hist[i])
+        success, best_path = query_nominal_planner(nominal_planner, x_est_hist[i])
         if success
             best_path = make_path_from_waypoints(best_path, nominal_planner.prob.turning_radius)
             for p in best_path
@@ -121,21 +121,19 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
             discovered = [true for _ in 1:length(backup_planner.prob.landmarks)]
         end
         
-        # Goal landmark (always show)
+        # Goal landmark (only if discovered)
         plot!(Shape(backup_planner.prob.landmarks[end][1] .+ backup_planner.prob.turning_radius*cos.(0:0.01:2pi),
                     backup_planner.prob.landmarks[end][2] .+ backup_planner.prob.turning_radius*sin.(0:0.01:2pi)), 
-              color=:cyan, alpha=0.2)
+                color=:cyan, alpha=0.2)
         plot!([backup_planner.prob.landmarks[end][1]], [backup_planner.prob.landmarks[end][2]], 
-              color=:yellow, marker=:circle, markersize=10)
-        
+                color=:yellow, marker=:circle, markersize=10)
+    
         # Start landmark (only if discovered)
-        if discovered[1]
-            plot!(Shape(backup_planner.prob.landmarks[1][1] .+ backup_planner.prob.turning_radius*cos.(0:0.01:2pi),
-                        backup_planner.prob.landmarks[1][2] .+ backup_planner.prob.turning_radius*sin.(0:0.01:2pi)), 
-                  color=:orange, alpha=0.2)
-            plot!([backup_planner.prob.landmarks[1][1]], [backup_planner.prob.landmarks[1][2]], 
-                  color=:orange, marker=:circle, markersize=10)
-        end
+        plot!(Shape(backup_planner.prob.landmarks[1][1] .+ backup_planner.prob.turning_radius*cos.(0:0.01:2pi),
+                    backup_planner.prob.landmarks[1][2] .+ backup_planner.prob.turning_radius*sin.(0:0.01:2pi)), 
+                color=:orange, alpha=0.2)
+        plot!([backup_planner.prob.landmarks[1][1]], [backup_planner.prob.landmarks[1][2]], 
+                color=:orange, marker=:circle, markersize=10)
         
         # Mid landmarks (only if discovered)
         for j in 2:length(backup_planner.prob.landmarks)-1
