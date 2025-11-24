@@ -9,14 +9,14 @@ using Statistics
 using PythonCall
 
 # Import local modules with Revise for automatic reloading
-include("src/utils.jl")
-include("src/fov.jl")
-include("src/rrt_star.jl")
-include("src/world.jl")
-include("src/visual_odometry.jl")
-include("src/nominal_planner.jl")
-include("src/backup_planner.jl")
-include("src/gatekeeper.jl")
+includet("src/utils.jl")
+includet("src/fov.jl")
+includet("src/rrt_star.jl")
+includet("src/world.jl")
+includet("src/visual_odometry.jl")
+includet("src/nominal_planner.jl")
+includet("src/backup_planner.jl")
+includet("src/gatekeeper.jl")
 
 using .World
 using .VO
@@ -110,7 +110,8 @@ function setup_simulation(;
             fovAngle=90*π/180, 
             errorRate=0.03, 
             updateRate=5.0, 
-            minFeatures=8
+            minFeatures=8,
+            featureBuffer=2
         )
     end
     
@@ -120,11 +121,20 @@ function setup_simulation(;
     
     # Set up landmarks
     landmarks = [x0, mid_landmarks..., goal]
+
+    vo_params_adjusted = VO.VOParams(
+        fovRadius=vo_params.fovRadius,
+        fovAngle=vo_params.fovAngle,
+        errorRate=vo_params.errorRate,
+        updateRate=vo_params.updateRate,
+        minFeatures=vo_params.minFeatures + vo_params.featureBuffer,
+        featureBuffer=0
+    )
     
     # Initialize backup planner
     backup_planner = initialize_backup_planner(
         domain,
-        vo_params,
+        vo_params_adjusted,
         landmarks,
         MVector(x0[1], x0[2], vo_params.fovRadius),
         SizedVector(seen_features),
@@ -222,6 +232,8 @@ function run_simulation(setup;
     landmarks_discovered_hist = [copy(landmarks_discovered)]
     
     x = x0  # True state
+    error = SVector{2,Float64}(0.0, 0.0)  # Estimation error (random walk)
+    error_direction = sample_error_direction(Float64)  # Fixed error direction until next landmark
     x_est = x0  # Estimated state
     t = t_commit = 0.0
     
@@ -247,20 +259,16 @@ function run_simulation(setup;
             # Propagate TRUE dynamics
             x = dubins_dynamics(x, u, ΔT, backup_planner.prob.turning_radius)
             
-            # Update state estimate with odometry error
-            x_est = update_state_estimate(x_est, x, u, ΔT, vo_params.errorRate)
+            # Update estimation error in fixed direction
+            error = update_estimation_error(error, u, ΔT, vo_params.errorRate, error_direction)
+            
+            # Compute estimated state from true state + error
+            x_est = compute_estimated_state(x, error)
         else
             # Old behavior: sample trajectory directly
             x = sample_committed_trajectory(committed_traj, t - t_commit, nominal_planner.prob.max_velocity)
             x_est = x  # No estimation error in direct sampling mode
         end
-        
-        push!(x_hist, x)
-        push!(x_est_hist, x_est)
-        
-        # Compute estimation error (position only, since yaw is always known)
-        est_error = norm(x_est[SOneTo(2)] - x[SOneTo(2)])
-        push!(estimation_error_hist, est_error)
         
         # Check if landmark is visible (reset cost and estimate if so)
         landmark_seen = false
@@ -272,12 +280,19 @@ function run_simulation(setup;
                 current_cost = 0.0
                 landmark_seen = true
                 landmarks_discovered[idx] = true
-                # Reset state estimate to truth when landmark is observed
-                x_est = reset_state_estimate(x)
+                # Reset estimation error to zero and pick new random direction
+                error = reset_estimation_error(Float64)
+                error_direction = sample_error_direction(Float64)
+                x_est = compute_estimated_state(x, error)
                 break
             end
         end
-        
+
+        # Compute estimation error (position only, since yaw is always known)
+        est_error = norm(x_est[SOneTo(2)] - x[SOneTo(2)])
+        push!(estimation_error_hist, est_error)
+        push!(x_hist, x)
+        push!(x_est_hist, x_est)
         # Update odometry error (this represents the "true" accumulated error)
         if !landmark_seen
             cost, num_feats = VO.odometry_error(x_hist[end-1], x, features, vo_params)
@@ -294,7 +309,7 @@ function run_simulation(setup;
         
         # Check if goal reached
         goal_reached = false
-        if norm(x[SOneTo(2)] - backup_planner.prob.landmarks[end]) <= backup_planner.prob.turning_radius
+        if norm(x[SOneTo(2)] - backup_planner.prob.landmarks[end]) <= backup_planner.prob.turning_radius*1.1
             if verbose
                 println("Iter $i: goal reached")
             end
