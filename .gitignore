@@ -28,3 +28,6 @@ Manifest.toml
 .vscode
 *.gif
 *.mp4
+*.mov
+*.svg
+*.png

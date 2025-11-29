@@ -303,10 +303,6 @@ function run_simulation(setup;
             num_feats = NaN
         end
 
-        
-        # Compute estimation error (position only, since yaw is always known)
-        est_error = norm(x_est[SOneTo(2)] - x[SOneTo(2)])
-        push!(estimation_error_hist, est_error)
         push!(num_feats_hist, num_feats)
         push!(cost_hist, current_cost)
         
@@ -422,19 +418,19 @@ function plot_timing_histograms(sim_results; bins=50)
     
     p1 = histogram(reroot_ms, bins=bins, 
                    xlabel="Time (ms)", ylabel="Count", 
-                   title="Backup Planner Update Times",
-                   label="", color=:blue, alpha=0.7)
+                #    title="ReRoot Update Times",
+                   label="", color=:orange, alpha=0.7)
     vline!([mean(reroot_ms)], linewidth=2, color=:red, 
            label="Mean: $(round(mean(reroot_ms), digits=2)) ms")
     
     p2 = histogram(gk_ms, bins=bins,
                    xlabel="Time (ms)", ylabel="Count",
-                   title="Gatekeeper Computation Times", 
+                #    title="Gatekeeper Computation Times", 
                    label="", color=:green, alpha=0.7)
     vline!([mean(gk_ms)], linewidth=2, color=:red,
            label="Mean: $(round(mean(gk_ms), digits=2)) ms")
     
-    plot(p1, p2, layout=(2,1), size=(800, 600))
+    plot(p1, p2, layout=(2,1))
 end
 
 """

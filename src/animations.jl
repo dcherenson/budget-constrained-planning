@@ -20,14 +20,68 @@ function find_destination_index(nodes, start::Int64)
 end
 
 """
+    compute_fov_coverage(x_hist, vo_params, domain_size, AR; resolution=1.0)
+
+Compute which areas have been seen by the FOV up to each frame.
+Returns a BitArray for each frame indicating coverage.
+"""
+function compute_fov_coverage(x_hist, vo_params, domain_size, AR; resolution=1.0)
+    nx = Int(ceil(domain_size * AR / resolution))
+    ny = Int(ceil(domain_size / resolution))
+    
+    coverage_hist = Vector{BitMatrix}()
+    cumulative_coverage = falses(ny, nx)
+    
+    for i in 1:length(x_hist)
+        x = x_hist[i]
+        
+        # Mark all points within FOV as seen
+        for ix in 1:nx
+            for iy in 1:ny
+                if cumulative_coverage[iy, ix]
+                    continue  # Already seen
+                end
+                
+                # Grid point coordinates
+                px = (ix - 0.5) * resolution
+                py = (iy - 0.5) * resolution
+                
+                # Check if point is in FOV
+                dx = px - x[1]
+                dy = py - x[2]
+                dist = sqrt(dx^2 + dy^2)
+                
+                if dist <= vo_params.fovRadius
+                    # Check angle constraint
+                    angle_to_point = atan(dy, dx)
+                    heading = x[3]
+                    angle_diff = abs(atan(sin(angle_to_point - heading), cos(angle_to_point - heading)))
+                    
+                    if angle_diff <= vo_params.fovAngle / 2
+                        cumulative_coverage[iy, ix] = true
+                    end
+                end
+            end
+        end
+        
+        push!(coverage_hist, copy(cumulative_coverage))
+    end
+    
+    return coverage_hist
+end
+
+"""
     animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_hist,
                        nominal_planner, backup_planner, vo_params, domain_size, AR;
                        cost_hist=nothing, num_feats_hist=nothing, landmarks_discovered_hist=nothing,
                        image_path="images/field.png", airplane_path="images/blue_airplane.png",
-                       airplane_size=15.0, frame_skip=1, show_estimate=true)
+                       airplane_size=15.0, frame_skip=1, show_estimate=true, show_unseen=true,
+                       save_frames=nothing, output_dir="frames", frame_ext="png",
+                       show_text=true, show_labels=true)
 
 Create animation of the full simulation showing:
 - Background field image
+- Unseen areas (transparent light orange, if show_unseen=true)
 - Features
 - Backup planner tree
 - Nominal path
@@ -44,6 +98,12 @@ Arguments:
 - landmarks_discovered_hist: Optional history of which landmarks have been discovered
 - frame_skip: Plot every nth frame (1 = all frames, 2 = every other frame, etc.)
 - show_estimate: Whether to show estimated trajectory alongside true trajectory
+- show_unseen: Whether to overlay transparent orange on unseen areas
+- save_frames: Optional vector of frame numbers to save as images (e.g., [10, 50, 100])
+- output_dir: Directory to save captured frames (default: "frames")
+- frame_ext: File extension for saved frames (default: "png", can be "svg", "pdf", etc.)
+- show_text: Whether to show text annotations (error, overlapping features)
+- show_labels: Whether to show axis labels (East [m], North [m])
 """
 function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_hist,
                             nominal_planner, backup_planner, vo_params, domain_size, AR;
@@ -54,17 +114,63 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
                             airplane_path="images/blue_airplane.png",
                             airplane_size=15.0, 
                             frame_skip=1,
-                            show_estimate=true)
+                            show_estimate=true,
+                            show_unseen=true,
+                            save_frames=nothing,
+                            output_dir="frames",
+                            frame_ext="png",
+                            show_text=true,
+                            show_labels=true)
     
     image = load(image_path)
     airplane_img = load(airplane_path)
     
-    anim = @animate for i in 1:frame_skip:length(x_hist)
+    # Create output directory if saving frames
+    if !isnothing(save_frames) && !isempty(save_frames)
+        if !isdir(output_dir)
+            mkpath(output_dir)
+        end
+        println("Will save frames: $save_frames to $output_dir/ as .$frame_ext files")
+    end
+    
+    # Precompute FOV coverage for all frames if needed
+    coverage_hist = nothing
+    if show_unseen
+        println("Computing FOV coverage...")
+        coverage_hist = compute_fov_coverage(x_hist, vo_params, domain_size, AR, resolution=2.0)
+    end
+
+    frames = isnothing(save_frames) ? (1:frame_skip:length(x_hist)) : save_frames
+    
+    anim = @animate for i in frames
         plot()
         
         # Background image
         plot!([0, domain_size*AR], [0, domain_size], 
               reverse(image, dims=1), yflip=false, aspect_ratio=:auto)
+        
+        # Overlay unseen areas with transparent light orange
+        if show_unseen && !isnothing(coverage_hist)
+            coverage = coverage_hist[i]
+            ny, nx = size(coverage)
+            resolution = domain_size * AR / nx
+            
+            for ix in 1:nx
+                for iy in 1:ny
+                    if !coverage[iy, ix]
+                        # This area has not been seen yet
+                        x_left = (ix - 1) * resolution
+                        x_right = ix * resolution
+                        y_bottom = (iy - 1) * resolution
+                        y_top = iy * resolution
+                        
+                        plot!(Shape([x_left, x_right, x_right, x_left],
+                                   [y_bottom, y_bottom, y_top, y_top]),
+                             color=:orange, alpha=0.3, linewidth=0)
+                    end
+                end
+            end
+        end
         
         # Features - plot all mapped features in white first
         plotFeatures2D(features_hist[i], :white)
@@ -186,22 +292,35 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
         end
         
         # Add text in bottom right corner
-        text_x = domain_size * AR * 0.98
-        text_y_base = domain_size * 0.05
-        if !isnothing(cost_hist) && i <= length(cost_hist)
-            annotate!(text_x, text_y_base + 8, 
-                     text("Error: $(round(cost_hist[i], digits=2)) m", 10, :white, :right))
+        if show_text
+            text_x = domain_size * AR * 0.98
+            text_y_base = domain_size * 0.05
+            if !isnothing(cost_hist) && i <= length(cost_hist)
+                annotate!(text_x, text_y_base + 8, 
+                         text("Error: $(round(cost_hist[i], digits=2)) m", 10, :white, :right))
+            end
+            annotate!(text_x, text_y_base, 
+                     text("Overlapping Features: $num_feats", 10, :white, :right))
         end
-        annotate!(text_x, text_y_base, 
-                 text("Overlapping Features: $num_feats", 10, :white, :right))
         
         # Formatting
         plot!(legend=false, axis=false, grid=false, widen=false,
-              background_color=:transparent, foreground_color=:black)
+              background_color=:transparent, foreground_color=:black,
+              margin=0Plots.mm, left_margin=0Plots.mm, right_margin=0Plots.mm,
+              top_margin=0Plots.mm, bottom_margin=0Plots.mm)
         xlims!(0, domain_size*AR)
         ylims!(0, domain_size)
-        xlabel!("East [m]")
-        ylabel!("North [m]")
+        if show_labels
+            xlabel!("East [m]")
+            ylabel!("North [m]")
+        end
+        
+        # Save frame if requested
+        if !isnothing(save_frames) && i in save_frames
+            frame_filename = joinpath(output_dir, "frame_$(lpad(i, 4, '0')).$frame_ext")
+            savefig(frame_filename)
+            println("Saved frame $i to $frame_filename")
+        end
     end
     
     return anim
