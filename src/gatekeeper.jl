@@ -79,18 +79,22 @@ function compute_nominal_trajectory_cost(problem::BackupPlannerProblem, path::Ve
     end
 
     while cost_vector[end] < max_cost && s < L
+        end_step = sample_combined_dubins_path(path, s)
         landmark_in_fov = false
         for l in problem.landmarks
-            if is_in_fov(start_step, l, problem.turning_radius, float(pi)) # if in the orbit around a landmark
+            if is_in_fov(end_step, l, problem.turning_radius*1.1, float(2pi), 0.0) # if in the orbit around a landmark
                 landmark_in_fov = true
                 push!(cost_vector, cost_vector[end])
                 return cost_vector
+            elseif is_in_fov(end_step, l, problem.vo_params.fovRadius, problem.vo_params.fovAngle, problem.vo_params.maxError)
+                landmark_in_fov = true
+                push!(cost_vector, 0.0)
+                break
             end
         end
 
-        end_step = sample_combined_dubins_path(path, s)
         if !landmark_in_fov
-            cost,_ = VO.odometry_error(start_step, end_step, problem.mapped_features[1], problem.vo_params)
+            cost,_ = VO.odometry_error(start_step, end_step, problem.mapped_features[1], problem.vo_params, max_cost)
             push!(cost_vector, cost_vector[end] + cost)
         end
         start_step = end_step

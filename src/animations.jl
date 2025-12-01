@@ -215,6 +215,9 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
         
         # Field of view
         plotFOV(x_hist[i][1:2], x_hist[i][3], vo_params.fovRadius, vo_params.fovAngle)
+        shift = vo_params.maxError / sin(vo_params.fovAngle / 2)
+        x_shifted = x_hist[i][1:2] +  SVector(cos(x_hist[i][3]), sin(x_hist[i][3])) * shift 
+        plotFOV(x_shifted, x_hist[i][3], vo_params.fovRadius - shift - vo_params.maxError, vo_params.fovAngle, color=:blue)
         
         # Committed trajectory
         plot!(gk_hist[i]; linewidth=5)

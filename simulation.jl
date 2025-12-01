@@ -112,7 +112,7 @@ function setup_simulation(;
             errorRate=0.03, 
             updateRate=5.0, 
             minFeatures=8,
-            featureBuffer=2
+            maxError=max_cost
         )
     end
     
@@ -122,20 +122,11 @@ function setup_simulation(;
     
     # Set up landmarks
     landmarks = [x0, mid_landmarks..., goal]
-
-    vo_params_adjusted = VO.VOParams(
-        fovRadius=vo_params.fovRadius,
-        fovAngle=vo_params.fovAngle,
-        errorRate=vo_params.errorRate,
-        updateRate=vo_params.updateRate,
-        minFeatures=vo_params.minFeatures + vo_params.featureBuffer,
-        featureBuffer=0
-    )
     
     # Initialize backup planner
     backup_planner = initialize_backup_planner(
         domain,
-        vo_params_adjusted,
+        vo_params,
         landmarks,
         MVector(x0[1], x0[2], vo_params.fovRadius),
         SizedVector(seen_features),
@@ -281,6 +272,10 @@ function run_simulation(setup;
                 end
                 current_cost = 0.0
                 landmark_seen = true
+                if !landmarks_discovered[idx]
+                    activate_landmark!(backup_planner, idx)
+                    verbose && println("Iter $i: landmark $idx discovered - activating in backup planner")
+                end
                 landmarks_discovered[idx] = true
                 # Reset estimation error to zero and pick new random direction
                 error = reset_estimation_error(Float64)
@@ -297,7 +292,7 @@ function run_simulation(setup;
         push!(x_est_hist, x_est)
         # Update odometry error (this represents the "true" accumulated error)
         if !landmark_seen
-            cost, num_feats = VO.odometry_error(x_hist[end-1], x, features, vo_params)
+            cost, num_feats = VO.odometry_error(x_hist[end-1], x, features, vo_params, 0.0)
             current_cost += cost
         else
             num_feats = NaN
@@ -473,7 +468,7 @@ Compute where the nominal trajectory would fail and its total cost.
 Returns (nominal_cost, failure_state, failure_index).
 """
 function compute_nominal_failure(nominal_planner, backup_prob, initial_nom_path, vo_params)
-    nom_cost = compute_nominal_trajectory_cost(backup_prob, initial_nom_path, Inf)
+    nom_cost = compute_nominal_trajectory_cost(backup_prob, initial_nom_path, 1.0)
     nom_fail_idx = length(nom_cost)
     x_nom_fail = sample_combined_dubins_path(
         initial_nom_path, 

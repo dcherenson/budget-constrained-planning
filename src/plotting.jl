@@ -23,6 +23,8 @@ function Plots.plot!(nodes::Vector{RRTStar.Node{V}}, destination_indices::Vector
         node = nodes[i]
         if (node.parent_index != 0) 
             dest = div(destination_indices[i]-1,4)+1
+            # Clamp dest to valid color indices
+            dest = min(dest, length(colors))
 
             q0 = nodes[node.parent_index].state
             q1 = node.state
@@ -47,7 +49,7 @@ function plot_domain(domain::Tuple{SVector{3,F}, SVector{3,F}}) where {F}
     plot!([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0]; color=:black, label=false)
 end
 
-function plotFOV(x, yaw, radius, angle)
+function plotFOV(x, yaw, radius, angle; color = :yellow)
 
     x1 = x[1] + radius*cos(yaw - angle/2)
     y1 = x[2] + radius*sin(yaw - angle/2)
@@ -60,7 +62,7 @@ function plotFOV(x, yaw, radius, angle)
     # plot the field of view with a transparent blue fill
     fill_x = [x[1]; arc_x; x[1]]
     fill_y = [x[2]; arc_y; x[2]]
-    plot!(fill_x, fill_y, fill = (0, :yellow, 0.1), label = "", color = :yellow)
+    plot!(fill_x, fill_y, fill = (0, color, 0.1), label = "", color = color)
     plot!([x[1], x1], [x[2], y1], label = "", color = :black)
     plot!([x[1], x2], [x[2], y2], label = "", color = :black)
     plot!(arc_x, arc_y, label = "", color = :black)

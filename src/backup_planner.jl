@@ -28,6 +28,7 @@ end
     mapped_features::SizedVector{TT}
     vo_params::VO.VOParams = VO.VOParams()
     unsafe_zones::VW
+    root_nodes::Vector{Int} = Int[]
 end
 
 struct BackupPlanner{TP, TN}
@@ -45,30 +46,26 @@ function initialize_backup_planner(domain::Tuple{TV, TV}, vo_params::VO.VOParams
     nodes = Vector{RRTStar.Node{TV}}()
     planner = BackupPlanner(P, nodes)
     for l in landmarks
-        add_goal_backup_planner!(planner, l)
+        center = l[SOneTo(2)] + planner.prob.turning_radius*@SVector[-sin(l[3]), cos(l[3])]
+        push!(planner.prob.landmarks, center)
     end
+
+    activate_landmark!(planner, 1)
 
     RRTStar.rrt_star!(P, nodes, max_iter; do_rewire = true)
     return planner
 end
 
-function add_goal_backup_planner!(planner::BackupPlanner, goal::TV) where {TV}
-    flipped_yaw = angle_add(goal[3], pi) # flip yaw because we are planning in reverse
-    flipped_goal = @SVector [goal[1], goal[2], flipped_yaw]
-
-    center = goal[SOneTo(2)] + planner.prob.turning_radius*@SVector[-sin(goal[3]), cos(goal[3])]
-
-    # push!(planner.nodes, RRTStar.Node(flipped_goal))
-
+function activate_landmark!(planner::BackupPlanner, idx::Int)
+    center = planner.prob.landmarks[idx]
     for angle = 0.0:pi/2:3pi/2
-        x = center[1] + planner.prob.turning_radius * cos(angle + goal[3])
-        y = center[2] + planner.prob.turning_radius * sin(angle + goal[3])
-        yaw = angle_add(goal[3], angle_diff(angle, pi/2))
+        x = center[1] + planner.prob.turning_radius * cos(angle)
+        y = center[2] + planner.prob.turning_radius * sin(angle)
+        yaw = angle_diff(angle, pi/2)
         flipped_goal = @SVector[x, y, yaw]
         push!(planner.nodes, RRTStar.Node(flipped_goal))
+        push!(planner.prob.root_nodes, length(planner.nodes))
     end
-
-    push!(planner.prob.landmarks, center)
 end
 
 function update_backup_planner!(planner::BackupPlanner, new_fov::TS, new_features::Set{TV}, max_iter) where {TV, TS}
@@ -129,7 +126,7 @@ function RRTStar.nearest(P::BackupPlannerProblem, nodes, x_rand)
 end
 
 function RRTStar.near(P::BackupPlannerProblem, nodes, x_new)
-    ind = Int[]
+    ind = Int[]#deepcopy(P.root_nodes)
     # sizehint!(ind, length(nodes)/2)
     for i=length(nodes):-1:1
         if (nodes[i].state[1] - x_new[1])^2 + (nodes[i].state[2] - x_new[2])^2 > P.near_radius^2
@@ -205,18 +202,18 @@ function RRTStar.path_cost(problem::BackupPlannerProblem, x_near, x_new)
         if s > L
             s = L
         end
-        landmark_in_fov = false
-        # for l in problem.landmarks
-        #     if is_in_fov(start_step, l, problem.vo_params.fovRadius, problem.vo_params.fovAngle)
-        #         landmark_in_fov = true
-        #         break
-        #     end
-        # end
-         
         errcode, end_step = Dubins.dubins_path_sample(path, s)
+        landmark_in_fov = false
+        for l in problem.landmarks
+            if is_in_fov(end_step, l, problem.vo_params.fovRadius, problem.vo_params.fovAngle, problem.vo_params.maxError) || is_in_fov(end_step, l, problem.turning_radius, float(pi), 0.0) # if in the orbit around a landmark
+                landmark_in_fov = true
+                break
+            end
+        end
+         
         @assert errcode == Dubins.EDUBOK errcode
         if !landmark_in_fov
-            inc_cost,_ = VO.odometry_error(start_step, end_step, problem.mapped_features[1], problem.vo_params)
+            inc_cost,_ = VO.odometry_error(start_step, end_step, problem.mapped_features[1], problem.vo_params, problem.vo_params.maxError)
             cost += inc_cost
         end
         start_step = end_step
