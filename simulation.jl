@@ -468,7 +468,7 @@ Compute where the nominal trajectory would fail and its total cost.
 Returns (nominal_cost, failure_state, failure_index).
 """
 function compute_nominal_failure(nominal_planner, backup_prob, initial_nom_path, vo_params)
-    nom_cost = compute_nominal_trajectory_cost(backup_prob, initial_nom_path, 1.0)
+    nom_cost = compute_nominal_trajectory_cost(backup_prob, initial_nom_path, 2.0)
     nom_fail_idx = length(nom_cost)
     x_nom_fail = sample_combined_dubins_path(
         initial_nom_path, 
@@ -478,16 +478,16 @@ function compute_nominal_failure(nominal_planner, backup_prob, initial_nom_path,
     return nom_cost[end], x_nom_fail, nom_fail_idx
 end
 
-"""
-    find_destination_index(nodes::Vector{RRTStar.Node{TV}}, start::Int64) where TV
+# """
+#     find_destination_index(nodes::Vector{RRTStar.Node{TV}}, start::Int64) where TV
 
-Helper function to traverse backup planner tree to find destination node.
-Used for visualization.
-"""
-function find_destination_index(nodes::Vector{RRTStar.Node{TV}}, start::Int64) where TV
-    if nodes[start].parent_index == 0
-        return start
-    else
-        return find_destination_index(nodes, nodes[start].parent_index)
-    end
-end
+# Helper function to traverse backup planner tree to find destination node.
+# Used for visualization.
+# """
+# function find_destination_index(nodes::Vector{RRTStar.Node{TV}}, start::Int64, root_nodes::Vector{Int64}) where TV
+#     if nodes[start].parent_index == 0
+#         return findfirst(==(start), root_nodes)
+#     else
+#         return find_destination_index(nodes, nodes[start].parent_index, root_nodes)
+#     end
+# end

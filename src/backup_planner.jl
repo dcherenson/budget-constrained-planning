@@ -50,13 +50,13 @@ function initialize_backup_planner(domain::Tuple{TV, TV}, vo_params::VO.VOParams
         push!(planner.prob.landmarks, center)
     end
 
-    activate_landmark!(planner, 1)
+    activate_landmark!(planner, 1, 0)
 
     RRTStar.rrt_star!(P, nodes, max_iter; do_rewire = true)
     return planner
 end
 
-function activate_landmark!(planner::BackupPlanner, idx::Int)
+function activate_landmark!(planner::BackupPlanner, idx::Int, max_iter=100)
     center = planner.prob.landmarks[idx]
     for angle = 0.0:pi/2:3pi/2
         x = center[1] + planner.prob.turning_radius * cos(angle)
@@ -66,6 +66,14 @@ function activate_landmark!(planner::BackupPlanner, idx::Int)
         push!(planner.nodes, RRTStar.Node(flipped_goal))
         push!(planner.prob.root_nodes, length(planner.nodes))
     end
+
+    if max_iter > 0
+        planner.prob.pos_sampling_space[1] = center[1]
+        planner.prob.pos_sampling_space[2] = center[2]
+        planner.prob.pos_sampling_space[3] = planner.prob.vo_params.fovRadius
+        RRTStar.rrt_star!(planner.prob, planner.nodes, max_iter; do_rewire = true)
+    end
+
 end
 
 function update_backup_planner!(planner::BackupPlanner, new_fov::TS, new_features::Set{TV}, max_iter) where {TV, TS}

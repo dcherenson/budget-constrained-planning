@@ -23,8 +23,6 @@ function Plots.plot!(nodes::Vector{RRTStar.Node{V}}, destination_indices::Vector
         node = nodes[i]
         if (node.parent_index != 0) 
             dest = div(destination_indices[i]-1,4)+1
-            # Clamp dest to valid color indices
-            dest = min(dest, length(colors))
 
             q0 = nodes[node.parent_index].state
             q1 = node.state

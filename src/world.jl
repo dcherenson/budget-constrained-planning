@@ -62,6 +62,42 @@ function Plots.plot!(zone::Circle{F}; kwargs...) where {F}
     x = zone.center[1] .+ zone.radius*cos.(θ)
     y = zone.center[2] .+ zone.radius*sin.(θ)
     plot!(x, y; kwargs...)
+    
+    # Add 8 parallel lines at 45 degrees
+    angle = π/4  # 45 degrees
+    num_lines = 8
+    
+    # Direction perpendicular to the lines (for spacing)
+    perp_x = -sin(angle)
+    perp_y = cos(angle)
+    
+    # Direction along the lines
+    dir_x = cos(angle)
+    dir_y = sin(angle)
+    
+    # Spacing between lines
+    spacing = 2 * zone.radius / (num_lines + 1)
+    
+    for i in 1:num_lines
+        # Offset from center perpendicular to line direction
+        offset = -zone.radius + i * spacing
+        
+        # Start point on the perpendicular
+        cx = zone.center[1] + offset * perp_x
+        cy = zone.center[2] + offset * perp_y
+        
+        # Calculate intersection length with circle at this offset
+        # Using chord length formula: 2*sqrt(r^2 - d^2) where d is distance from center
+        half_length = sqrt(max(0, zone.radius^2 - offset^2))
+        
+        # Line endpoints
+        x1 = cx - half_length * dir_x
+        y1 = cy - half_length * dir_y
+        x2 = cx + half_length * dir_x
+        y2 = cy + half_length * dir_y
+        
+        plot!([x1, x2], [y1, y2]; kwargs...)
+    end
 end
 
 function Plots.plot!(zone::Rectangle{F}; kwargs...) where {F}

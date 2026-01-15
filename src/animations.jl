@@ -11,11 +11,11 @@ using Images
 Helper function to traverse backup planner tree to find destination node.
 Used for visualization of tree paths.
 """
-function find_destination_index(nodes, start::Int64)
+function find_destination_index(nodes, start::Int64, root_nodes::Vector{Int64})
     if nodes[start].parent_index == 0
-        return start
+        return findfirst(==(start), root_nodes)
     else
-        return find_destination_index(nodes, nodes[start].parent_index)
+        return find_destination_index(nodes, nodes[start].parent_index, root_nodes)
     end
 end
 
@@ -112,6 +112,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
                             landmarks_discovered_hist=nothing,
                             image_path="images/field.png", 
                             airplane_path="images/blue_airplane.png",
+                            est_airplane_path="images/red_airplane.png",
                             airplane_size=15.0, 
                             frame_skip=1,
                             show_estimate=true,
@@ -124,6 +125,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
     
     image = load(image_path)
     airplane_img = load(airplane_path)
+    est_airplane_img = load(est_airplane_path)
     
     # Create output directory if saving frames
     if !isnothing(save_frames) && !isempty(save_frames)
@@ -186,7 +188,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
         # Backup planner tree
         destination_indices_back = zeros(Int64, length(backup_hist[i]))
         for j in 1:length(backup_hist[i])
-            destination_indices_back[j] = find_destination_index(backup_hist[i], j)
+            destination_indices_back[j] = find_destination_index(backup_hist[i], j, backup_planner.prob.root_nodes)
         end
         plot!(backup_hist[i], destination_indices_back, backup_planner.prob.turning_radius, 
               colors=[:orange, [:white for k=1:length(backup_planner.prob.landmarks)-2]..., :yellow])
@@ -261,7 +263,7 @@ function animate_simulation(x_hist, x_est_hist, gk_hist, features_hist, backup_h
         
         # Estimated airplane position (transparent red) - plot first so true position is on top
         if show_estimate && !isempty(x_est_hist) && i <= length(x_est_hist)
-            rotated_airplane_est = imrotate(airplane_img, -x_est_hist[i][3], axes(airplane_img))
+            rotated_airplane_est = imrotate(est_airplane_img, -x_est_hist[i][3], axes(est_airplane_img))
             h_plane_est, w_plane_est = size(rotated_airplane_est)
             aspect_est = w_plane_est / h_plane_est
             half_size_est = airplane_size / 2
@@ -383,7 +385,11 @@ function animate_orbit(x0, nominal_planner, backup_planner, domain_size, AR;
             center[2] + nominal_planner.prob.turning_radius * sin(yaw - π/2),
             yaw
         )
-        
+          
+        plotFOV(x_pos_orbit[1:2], x_pos_orbit[3], 
+                      backup_planner.prob.vo_params.fovRadius, 
+                      backup_planner.prob.vo_params.fovAngle)
+                      
         # Airplane at orbit position
         rotated_airplane = imrotate(airplane_img, -x_pos_orbit[3], axes(airplane_img))
         h_plane, w_plane = size(rotated_airplane)
@@ -392,7 +398,8 @@ function animate_orbit(x0, nominal_planner, backup_planner, domain_size, AR;
         plot!([x_pos_orbit[1] - half_size*aspect, x_pos_orbit[1] + half_size*aspect],
               [x_pos_orbit[2] - half_size, x_pos_orbit[2] + half_size],
               reverse(rotated_airplane, dims=1), yflip=false)
-        
+      
+
         # Formatting
         plot!(legend=false, axis=false, grid=false, widen=false,
               background_color=:transparent, foreground_color=:black)
