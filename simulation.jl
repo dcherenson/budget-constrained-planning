@@ -7,17 +7,17 @@ using Random
 using StaticArrays
 using Statistics
 using PythonCall
-using Revise
+
 
 # Import local modules with Revise for automatic reloading
-includet("src/utils.jl")
-includet("src/fov.jl")
-includet("src/rrt_star.jl")
-includet("src/world.jl")
-includet("src/visual_odometry.jl")
-includet("src/nominal_planner.jl")
-includet("src/backup_planner.jl")
-includet("src/gatekeeper.jl")
+include("src/utils.jl")
+include("src/fov.jl")
+include("src/rrt_star.jl")
+include("src/world.jl")
+include("src/visual_odometry.jl")
+include("src/nominal_planner.jl")
+include("src/backup_planner.jl")
+include("src/gatekeeper.jl")
 
 using .World
 using .VO

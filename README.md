@@ -12,10 +12,10 @@ Follow the steps in [simulation.ipynb](simulation.ipynb) to run the simulation.
 
 ## Simulation Animations
 Please wait a few seconds for the following gifs to load:
-### Budget = 9 m of accumulated localization error
+### Budget = 5 m of accumulated localization error
 
-![Success](./animations/field_budget_9_success.gif)
+![Success](./animations/field_test_5m.gif)
 
-### Budget = 5 m
+### Budget = 2.5 m
 
-![Fail](./animations/field_budget_5_fail.gif)
+![Fail](./animations/field_test_2m.gif)
