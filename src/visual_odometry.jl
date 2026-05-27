@@ -11,6 +11,7 @@ include("fov.jl")
     errorRate::F
     updateRate::F
     minFeatures::Int
+    maxError::F
 end
 
 function intersect_fast(a::Vector{I},b::Vector{I}) where {I <: Integer}
@@ -33,10 +34,10 @@ function intersect_fast(a::Vector{I},b::Vector{I}) where {I <: Integer}
 end
 
 
-function odometry_error(start_pose::SVector{3,F}, end_pose::SVector{3,F}, features::BallTree, params::VOParams) where {F}
+function odometry_error(start_pose::SVector{3,F}, end_pose::SVector{3,F}, features::BallTree, params::VOParams, robustness::F) where {F}
     # compute overlapping points
-    startPoints = features_in_fov_idx(features, start_pose, params.fovRadius, params.fovAngle)    
-    endPoints = features_in_fov_idx(features, end_pose, params.fovRadius, params.fovAngle)
+    startPoints = features_in_fov_idx(features, start_pose, params.fovRadius, params.fovAngle, robustness)    
+    endPoints = features_in_fov_idx(features, end_pose, params.fovRadius, params.fovAngle, robustness)
     overlappingPoints = intersect_fast(startPoints, endPoints)
 
     if length(overlappingPoints) >= params.minFeatures

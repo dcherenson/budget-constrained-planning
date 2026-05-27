@@ -26,3 +26,8 @@ Manifest.toml
 .CondaPkg/
 
 .vscode
+*.gif
+*.mp4
+*.mov
+*.svg
+*.png
